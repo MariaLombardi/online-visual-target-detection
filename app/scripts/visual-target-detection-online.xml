@@ -1,0 +1,68 @@
+
+<application>
+<name>visual target detection online</name>
+<version>2.0</version>
+
+<!-- Modules -->
+
+	<module>
+		<name>yarpdev</name>
+		<parameters>--context realsense --from realsense2Conf_640_480.ini</parameters>
+		<node>iiticublap235</node>
+	</module>
+
+	<module>
+		<name>yarpOpenPose</name>
+		<parameters>--from /home/icub/shared/conf/yarpOpenPose.ini</parameters>
+		<node>docker-mg</node>
+	</module>
+
+	<module>
+		<name>yarpview</name>
+		<parameters>--name /view/rgb --w 640 --h 480</parameters>
+		<node>localhost</node>
+	</module>
+
+	<module>
+		<name>yarpview</name>
+		<parameters>--name /view/bbox --w 640 --h 480</parameters>
+		<node>localhost</node>
+	</module>
+
+<!-- Connections -->
+
+	<connection>
+		<from>/depthCamera/rgbImage:o</from>
+		<to>/yarpOpenPose/image:i</to>
+		<protocol>mjpeg</protocol>
+	</connection>
+
+	<connection>
+		<from>/yarpOpenPose/propag:o</from>
+		<to>/view/rgb</to>
+		<protocol>mjpeg</protocol>
+	</connection>
+
+    <!-- raw image to input -->
+	<connection>
+		<from>/yarpOpenPose/propag:o</from>
+		<to>/vtd/image:i</to>
+		<protocol>mjpeg</protocol>
+	</connection>
+
+	<!-- yarpopenpose data to input -->
+    <connection>
+		<from>/yarpOpenPose/target:o</from>
+		<to>/vtd/data:i</to>
+		<protocol>tcp</protocol>
+	</connection>
+
+
+    <!-- visualize bbox -->
+	<connection>
+		<from>/vtd/image:o</from>
+		<to>/view/bbox</to>
+		<protocol>mjpeg</protocol>
+	</connection>
+
+</application>
