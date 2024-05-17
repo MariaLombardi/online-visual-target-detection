@@ -6,6 +6,7 @@ import torchvision.transforms.functional as TF
 import numpy as np
 from PIL import Image, ImageFilter, ImageDraw
 import pandas as pd
+Image.MAX_IMAGE_PIXELS = None
 
 import matplotlib as mpl
 
@@ -691,142 +692,147 @@ class ObjectAttention(Dataset):
         else: # train
             return images, faces, head_channels, heatmaps, gaze_inouts
 
-    class GazeEstimation(Dataset):
-        def __init__(self, data_dir, annotation_csv, transform, input_size=input_resolution, output_size=output_resolution,
-                     test=False, imshow=False):
-            column_names = ['path', 'eye_x', 'eye_y',
-                            'gaze_x', 'gaze_y', 'bbox_x_min', 'bbox_y_min', 'bbox_x_max', 'bbox_y_max', 'inout']
-            df = pd.read_csv(annotation_csv, sep=',', names=column_names, index_col=False, encoding="utf-8-sig")
-            df = df[df['inout'] != -1]  # only use "in" or "out "gaze. (-1 is invalid, 0 is out gaze)
-            df.reset_index(inplace=True)
-            self.y_train = df[['bbox_x_min', 'bbox_y_min', 'bbox_x_max', 'bbox_y_max', 'eye_x', 'eye_y', 'gaze_x',
-                               'gaze_y', 'inout']]
-            self.X_train = df['path']
-            self.length = len(df)
+class GazeEstimation(Dataset):
+    def __init__(self, data_dir, annotation_csv, transform, input_size=input_resolution, output_size=output_resolution,
+             test=False, imshow=False):
+        print('Reading annotation file: %s' % annotation_csv)
+        column_names = ['path', 'eye_x', 'eye_y', 'gaze_x', 'gaze_y', 'bbox_x_min', 'bbox_y_min', 'bbox_x_max', 'bbox_y_max', 'inout']
+        df = pd.read_csv(annotation_csv, sep=',', header=0, names=column_names, index_col=False, encoding="utf-8-sig")
+        df = df[df['inout'] != -1]  # only use "in" or "out "gaze. (-1 is invalid, 0 is out gaze)
+        df.reset_index(inplace=True)
+        self.y_train = df[['bbox_x_min', 'bbox_y_min', 'bbox_x_max', 'bbox_y_max', 'eye_x', 'eye_y', 'gaze_x', 'gaze_y', 'inout']]
+        self.X_train = df['path']
+        self.length = len(df)
+        print('Total number of annotation %d' % self.length)
+        self.data_dir = data_dir
+        self.transform = transform
+        self.test = test
 
-            self.data_dir = data_dir
-            self.transform = transform
-            self.test = test
+        self.input_size = input_size
+        self.output_size = output_size
+        self.imshow = imshow
 
-            self.input_size = input_size
-            self.output_size = output_size
-            self.imshow = imshow
 
-        def __getitem__(self, index):
 
-            path = self.X_train.iloc[index]
-            x_min, y_min, x_max, y_max, eye_x, eye_y, gaze_x, gaze_y, inout = self.y_train.iloc[index]
-            gaze_inside = bool(inout)
+    def __getitem__(self, index):
 
-            # expand face bbox a bit
-            k = 0.1
+        path = self.X_train.iloc[index]
+        x_min, y_min, x_max, y_max, eye_x, eye_y, gaze_x, gaze_y, inout = self.y_train.iloc[index]
+        gaze_inside = bool(inout)
+        try:
+           x_min, y_min, x_max, y_max = map(float, [x_min, y_min, x_max, y_max])
+           eye_x, eye_y, gaze_x, gaze_y = map(float, [eye_x, eye_y, gaze_x, gaze_y])
+        except Exception as e:
+            print(index)
+            print(self.y_train.iloc[index])
+            print(e)
+
+        # expand face bbox a bit
+        k = 0.1
+        x_min -= k * abs(x_max - x_min)
+        y_min -= k * abs(y_max - y_min)
+        x_max += k * abs(x_max - x_min)
+        y_max += k * abs(y_max - y_min)
+
+        img = Image.open(os.path.join(self.data_dir, path))
+        img = img.convert('RGB')
+        width, height = img.size
+
+        if self.imshow:
+            img.save("origin_img.jpg")
+
+        ## data augmentation
+
+        # Jitter (expansion-only) bounding box size
+        if np.random.random_sample() <= 0.5:
+            k = np.random.random_sample() * 0.2
             x_min -= k * abs(x_max - x_min)
             y_min -= k * abs(y_max - y_min)
             x_max += k * abs(x_max - x_min)
             y_max += k * abs(y_max - y_min)
 
-            img = Image.open(os.path.join(self.data_dir, path))
-            img = img.convert('RGB')
-            width, height = img.size
-            x_min, y_min, x_max, y_max = map(float, [x_min, y_min, x_max, y_max])
+        # Random Crop
+        if np.random.random_sample() <= 0.5:
+            # Calculate the minimum valid range of the crop that doesn't exclude the face and the gaze target
+            crop_x_min = np.min([gaze_x * width, x_min, x_max])
+            crop_y_min = np.min([gaze_y * height, y_min, y_max])
+            crop_x_max = np.max([gaze_x * width, x_min, x_max])
+            crop_y_max = np.max([gaze_y * height, y_min, y_max])
 
-            if self.imshow:
-                img.save("origin_img.jpg")
+            # Randomly select a random top left corner
+            if crop_x_min >= 0:
+                crop_x_min = np.random.uniform(0, crop_x_min)
+            if crop_y_min >= 0:
+                crop_y_min = np.random.uniform(0, crop_y_min)
 
-            ## data augmentation
+            # Find the range of valid crop width and height starting from the (crop_x_min, crop_y_min)
+            crop_width_min = crop_x_max - crop_x_min
+            crop_height_min = crop_y_max - crop_y_min
+            crop_width_max = width - crop_x_min
+            crop_height_max = height - crop_y_min
+            # Randomly select a width and a height
+            crop_width = np.random.uniform(crop_width_min, crop_width_max)
+            crop_height = np.random.uniform(crop_height_min, crop_height_max)
 
-            # Jitter (expansion-only) bounding box size
-            if np.random.random_sample() <= 0.5:
-                k = np.random.random_sample() * 0.2
-                x_min -= k * abs(x_max - x_min)
-                y_min -= k * abs(y_max - y_min)
-                x_max += k * abs(x_max - x_min)
-                y_max += k * abs(y_max - y_min)
+            # Crop it
+            img = TF.crop(img, crop_y_min, crop_x_min, crop_height, crop_width)
 
-            # Random Crop
-            if np.random.random_sample() <= 0.5:
-                # Calculate the minimum valid range of the crop that doesn't exclude the face and the gaze target
-                crop_x_min = np.min([gaze_x * width, x_min, x_max])
-                crop_y_min = np.min([gaze_y * height, y_min, y_max])
-                crop_x_max = np.max([gaze_x * width, x_min, x_max])
-                crop_y_max = np.max([gaze_y * height, y_min, y_max])
+            # Record the crop's (x, y) offset
+            offset_x, offset_y = crop_x_min, crop_y_min
 
-                # Randomly select a random top left corner
-                if crop_x_min >= 0:
-                    crop_x_min = np.random.uniform(0, crop_x_min)
-                if crop_y_min >= 0:
-                    crop_y_min = np.random.uniform(0, crop_y_min)
-
-                # Find the range of valid crop width and height starting from the (crop_x_min, crop_y_min)
-                crop_width_min = crop_x_max - crop_x_min
-                crop_height_min = crop_y_max - crop_y_min
-                crop_width_max = width - crop_x_min
-                crop_height_max = height - crop_y_min
-                # Randomly select a width and a height
-                crop_width = np.random.uniform(crop_width_min, crop_width_max)
-                crop_height = np.random.uniform(crop_height_min, crop_height_max)
-
-                # Crop it
-                img = TF.crop(img, crop_y_min, crop_x_min, crop_height, crop_width)
-
-                # Record the crop's (x, y) offset
-                offset_x, offset_y = crop_x_min, crop_y_min
-
-                # convert coordinates into the cropped frame
-                x_min, y_min, x_max, y_max = x_min - offset_x, y_min - offset_y, x_max - offset_x, y_max - offset_y
-                # if gaze_inside:
-                gaze_x, gaze_y = (gaze_x * width - offset_x) / float(crop_width), \
+            # convert coordinates into the cropped frame
+            x_min, y_min, x_max, y_max = x_min - offset_x, y_min - offset_y, x_max - offset_x, y_max - offset_y
+            # if gaze_inside:
+            gaze_x, gaze_y = (gaze_x * width - offset_x) / float(crop_width), \
                                  (gaze_y * height - offset_y) / float(crop_height)
-                # else:
-                #     gaze_x = -1; gaze_y = -1
+            # else:
+            #     gaze_x = -1; gaze_y = -1
 
-                width, height = crop_width, crop_height
+            width, height = crop_width, crop_height
 
-            # Random flip
-            if np.random.random_sample() <= 0.5:
-                img = img.transpose(Image.FLIP_LEFT_RIGHT)
-                x_max_2 = width - x_min
-                x_min_2 = width - x_max
-                x_max = x_max_2
-                x_min = x_min_2
-                gaze_x = 1 - gaze_x
+        # Random flip
+        if np.random.random_sample() <= 0.5:
+            img = img.transpose(Image.FLIP_LEFT_RIGHT)
+            x_max_2 = width - x_min
+            x_min_2 = width - x_max
+            x_max = x_max_2
+            x_min = x_min_2
+            gaze_x = 1 - gaze_x
 
-            # Random color change
-            if np.random.random_sample() <= 0.5:
-                img = TF.adjust_brightness(img, brightness_factor=np.random.uniform(0.5, 1.5))
-                img = TF.adjust_contrast(img, contrast_factor=np.random.uniform(0.5, 1.5))
-                img = TF.adjust_saturation(img, saturation_factor=np.random.uniform(0, 1.5))
+        # Random color change
+        if np.random.random_sample() <= 0.5:
+            img = TF.adjust_brightness(img, brightness_factor=np.random.uniform(0.5, 1.5))
+            img = TF.adjust_contrast(img, contrast_factor=np.random.uniform(0.5, 1.5))
+            img = TF.adjust_saturation(img, saturation_factor=np.random.uniform(0, 1.5))
 
-            head_channel = imutils.get_head_box_channel(x_min, y_min, x_max, y_max, width, height,
-                                                        resolution=self.input_size, coordconv=False).unsqueeze(0)
+        head_channel = imutils.get_head_box_channel(x_min, y_min, x_max, y_max, width, height,
+                                                    resolution=self.input_size, coordconv=False).unsqueeze(0)
 
-            # Crop the face
-            face = img.crop((int(x_min), int(y_min), int(x_max), int(y_max)))
+        # Crop the face
+        face = img.crop((int(x_min), int(y_min), int(x_max), int(y_max)))
 
-            if self.imshow:
-                img.save("img_aug.jpg")
-                face.save('face_aug.jpg')
+        if self.imshow:
+            img.save("img_aug.jpg")
+            face.save('face_aug.jpg')
 
-            if self.transform is not None:
-                img = self.transform(img)
-                face = self.transform(face)
+        if self.transform is not None:
+            img = self.transform(img)
+            face = self.transform(face)
 
-            # generate the heat map used for deconv prediction
-            gaze_heatmap = torch.zeros(self.output_size, self.output_size)  # set the size of the output
-            gaze_heatmap = imutils.draw_labelmap(gaze_heatmap, [gaze_x * self.output_size, gaze_y * self.output_size],
-                                                     3,
-                                                     type='Gaussian')
+        # generate the heat map used for deconv prediction
+        gaze_heatmap = torch.zeros(self.output_size, self.output_size)  # set the size of the output
+        gaze_heatmap = imutils.draw_labelmap(gaze_heatmap, [gaze_x * self.output_size, gaze_y * self.output_size], 3, type='Gaussian')
 
-            if self.imshow:
-                fig = plt.figure(111)
-                img = 255 - imutils.unnorm(img.numpy()) * 255
-                img = np.clip(img, 0, 255)
-                plt.imshow(np.transpose(img, (1, 2, 0)))
-                plt.imshow(imresize(gaze_heatmap, (self.input_size, self.input_size)), cmap='jet', alpha=0.3)
-                plt.imshow(imresize(1 - head_channel.squeeze(0), (self.input_size, self.input_size)), alpha=0.2)
-                plt.savefig('viz_aug.png')
+        if self.imshow:
+            fig = plt.figure(111)
+            img = 255 - imutils.unnorm(img.numpy()) * 255
+            img = np.clip(img, 0, 255)
+            plt.imshow(np.transpose(img, (1, 2, 0)))
+            plt.imshow(imresize(gaze_heatmap, (self.input_size, self.input_size)), cmap='jet', alpha=0.3)
+            plt.imshow(imresize(1 - head_channel.squeeze(0), (self.input_size, self.input_size)), alpha=0.2)
+            plt.savefig('viz_aug.png')
 
-            return img, face, head_channel, gaze_heatmap, path, gaze_inside
+        return img, face, head_channel, gaze_heatmap, path, gaze_inside
 
 
     def __len__(self):

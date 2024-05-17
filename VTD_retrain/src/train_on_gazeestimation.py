@@ -13,8 +13,9 @@ from datetime import datetime
 import shutil
 import numpy as np
 from scipy.misc import imresize
-from tensorboardX import SummaryWriter
+#from tensorboardX import SummaryWriter
 import warnings
+import logging
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -25,10 +26,20 @@ parser.add_argument("--init_weights", type=str, default='initial_weights_for_spa
 parser.add_argument("--lr", type=float, default=5e-5, help="learning rate")
 parser.add_argument("--batch_size", type=int, default=16, help="batch size")
 parser.add_argument("--epochs", type=int, default=3, help="max number of epochs")
-parser.add_argument("--print_every", type=int, default=100, help="print every ___ iterations")
+parser.add_argument("--print_every", type=int, default=1, help="print every ___ iterations")
 parser.add_argument("--save_every", type=int, default=1, help="save every ___ epochs")
 parser.add_argument("--log_dir", type=str, default="logs", help="directory to save log files")
 args = parser.parse_args()
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
+
+file_handler = logging.FileHandler('logs.log')
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
 
 
 def _get_transform():
@@ -59,6 +70,7 @@ def train():
         shutil.rmtree(logdir)
     os.makedirs(logdir)
 
+    #writer = SummaryWriter(logdir)
     np.random.seed(1)
 
     # Define device
@@ -90,7 +102,7 @@ def train():
 
     print("Training in progress ...")
     for ep in range(args.epochs):
-        for batch, (img, face, head_channel, gaze_heatmap, inout_label, lengths) in enumerate(train_loader):
+        for batch, (img, face, head_channel, gaze_heatmap, name, gaze_inside) in enumerate(train_loader):
             model.train(True)
             # freeze batchnorm layers
             for module in model.modules():
@@ -119,7 +131,7 @@ def train():
             # cross entropy loss for in vs out
             Xent_loss = bcelogit_loss(inout_pred.squeeze(), gaze_inside.squeeze())*100
 
-            total_loss = l2_loss + Xent_loss
+            total_loss = l2_loss #+ Xent_loss
             # NOTE: summed loss is used to train the main model.
             #       l2_loss is used to get SOTA on GazeFollow benchmark.
             total_loss.backward() # loss accumulation
@@ -134,12 +146,19 @@ def train():
                 print("Epoch:{:04d}\tstep:{:06d}/{:06d}\ttraining loss: (l2){:.4f} (Xent){:.4f}".format(ep, batch+1, max_steps, l2_loss, Xent_loss))
                 # Tensorboard
                 ind = np.random.choice(len(images), replace=False)
-                writer.add_scalar("Train Loss", total_loss, global_step=step)
+                #writer.add_scalar("Train Loss", total_loss, global_step=step)
+                logger.info("Epoch:{:04d}\tstep:{:06d}/{:06d}\ttraining loss: (l2){:.4f} (Xent){:.4f}".format(ep, batch+1, max_steps, l2_loss, Xent_loss))
 
         if ep % args.save_every == 0:
             # save the model
             checkpoint = {'model': model.state_dict()}
             torch.save(checkpoint, os.path.join(logdir, 'epoch_%02d_weights.pt' % (ep+1)))
+
+
+
+
+
+
 
 
 if __name__ == "__main__":
