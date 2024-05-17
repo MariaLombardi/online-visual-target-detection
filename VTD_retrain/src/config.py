@@ -23,6 +23,11 @@ ObjectAttention_train_label = "/projects/ObjectAttention_retrain/retrain_data/an
 ObjectAttention_val_data = "/projects/ObjectAttention_retrain/retrain_data/images"
 ObjectAttention_val_label = "/projects/ObjectAttention_retrain/retrain_data/annotations/test"
 
+# =============================================================================
+# GazeEstimation dataset dir config
+# =============================================================================
+GazeEstimation_train_data = "../../src/hsp_dataset/train/split0"
+GazeEstimation_train_label = "../../src/hsp_dataset/train/split0/annotations.csv"
 
 # =============================================================================
 # model config

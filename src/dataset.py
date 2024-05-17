@@ -1,4 +1,4 @@
-aaf5b0d110a7import torch
+import torch
 from torch.utils.data.dataset import Dataset
 from torchvision import transforms
 import torchvision.transforms.functional as TF

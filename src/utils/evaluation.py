@@ -24,3 +24,8 @@ def argmax_pts(heatmap):
 
 def L2_dist(p1, p2):
     return np.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
+
+def angular_error(p1, p2):
+    ang_error_rad = np.arccos(np.clip(np.dot(p1, p2), -1.0, 1.0))
+    ang_error_degree = ang_error_rad / np.pi * 180
+    return ang_error_degree
