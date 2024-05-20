@@ -32,15 +32,18 @@ parser.add_argument('--model_weights', type=str, help='model weights', default='
 # parser.add_argument('--image_dir', type=str, help='images', default=FRAMES_DIR)
 # parser.add_argument('--head_dir', type=str, help='head bounding boxes', default=JSON_FILES)
 parser.add_argument('--vis_mode', type=str, help='heatmap or arrow', default='arrow')
-parser.add_argument('--out_threshold', type=int, help='out-of-frame target dicision threshold', default=100)
+parser.add_argument('--out_threshold', type=int, help='out-of-frame target dicision threshold', default=200)
 args = parser.parse_args()
 
 if __name__ == '__main__':
-    dataset_folder = os.path.join(os.getcwd(), "hsp_dataset")
+    dataset_folder = os.path.join(os.getcwd(), "hsp_dataset/test")
     # for each split
     list_splits = [name for name in os.listdir(dataset_folder) if os.path.isdir(os.path.join(dataset_folder, name))]
     list_splits.sort()
+    #list_splits = ['split4']
     for split in list_splits:
+        args.model_weights = '/projects/vtd-comparison-maria/VTD_retrain/src/logs/%s/epoch_03_weights.pt' % split
+        print('Model loaded: %s' % args.model_weights)
         split_folder = os.path.join(dataset_folder, split)
         list_participants = [name for name in os.listdir(split_folder) if os.path.isdir(os.path.join(split_folder, name))]
         #list_participants = ['p00']
@@ -49,13 +52,13 @@ if __name__ == '__main__':
             participant_folder = os.path.join(split_folder, participant)
             print('Processing folder %s' % participant_folder)
 
-            output_file = open(participant_folder + '/results.txt', "w+")
+            output_file = open(participant_folder + '/results_finetuned.txt', "w+")
 
             imgs_folder = os.path.join(participant_folder, 'board_images_human')
             json_folder = os.path.join(participant_folder, 'board_data_openpose')
-            out_folder = os.path.join(participant_folder, 'output_images')
-            if not os.path.exists(out_folder):
-                os.makedirs(out_folder)
+            #out_folder = os.path.join(participant_folder, 'output_images')
+            #if not os.path.exists(out_folder):
+            #    os.makedirs(out_folder)
 
             imgs = list(filter(lambda x: '.jpg' in x, os.listdir(imgs_folder)))
             imgs = [img.replace('.jpg', '') for img in imgs]
@@ -139,13 +142,13 @@ if __name__ == '__main__':
                             # The arrow mode
                             if args.vis_mode == 'arrow':
                                 # in-frame gaze
-                                if inout < args.out_threshold:
-                                    pred_x, pred_y = evaluation.argmax_pts(raw_hm)
-                                    norm_p = [pred_x/output_resolution, pred_y/output_resolution]
-                                    print('image %s: pred [%d %d], norm_pred [%f %f], scaled [%d %d]' % (img, pred_x, pred_y, norm_p[0], norm_p[1], int(norm_p[0]*width), int(norm_p[1]*height)))
-                                    output_file.write("%s %d %d %f %f %d %d \n" % (img, pred_x, pred_y, norm_p[0], norm_p[1], int(norm_p[0]*width), int(norm_p[1]*height)))
-                                    circs = cv2.circle(img_bbox, (int(norm_p[0]*width), int(norm_p[1]*height)),  int(height/50.0), (35, 225, 35), -1)
-                                    cv2.imwrite(out_folder + '/' + img + '.jpg', cv2.cvtColor(circs, cv2.COLOR_BGR2RGB))
+                                #if inout < args.out_threshold:
+                                pred_x, pred_y = evaluation.argmax_pts(raw_hm)
+                                norm_p = [pred_x/output_resolution, pred_y/output_resolution]
+                                print('image %s: pred [%d %d], norm_pred [%f %f], scaled [%d %d]' % (img, pred_x, pred_y, norm_p[0], norm_p[1], int(norm_p[0]*width), int(norm_p[1]*height)))
+                                output_file.write("%s %d %d %f %f %d %d \n" % (img, pred_x, pred_y, norm_p[0], norm_p[1], int(norm_p[0]*width), int(norm_p[1]*height)))
+                                #circs = cv2.circle(img_bbox, (int(norm_p[0]*width), int(norm_p[1]*height)),  int(height/50.0), (35, 225, 35), -1)
+                                #cv2.imwrite(out_folder + '/' + img + '.jpg', cv2.cvtColor(circs, cv2.COLOR_BGR2RGB))
                 else:
                     print('Cannot read json file for the image %s' % img_file)
 

@@ -717,11 +717,19 @@ class GazeEstimation(Dataset):
     def __getitem__(self, index):
 
         path = self.X_train.iloc[index]
+        img = Image.open(os.path.join(self.data_dir, path))
+        img = img.convert('RGB')
+        width, height = img.size
+
         x_min, y_min, x_max, y_max, eye_x, eye_y, gaze_x, gaze_y, inout = self.y_train.iloc[index]
         gaze_inside = bool(inout)
         try:
            x_min, y_min, x_max, y_max = map(float, [x_min, y_min, x_max, y_max])
            eye_x, eye_y, gaze_x, gaze_y = map(float, [eye_x, eye_y, gaze_x, gaze_y])
+           # normalize between zero and one
+           gaze_x = int(eye_x + gaze_x)/width
+           gaze_y = int(eye_y + gaze_y)/height
+           #print(gaze_x, gaze_y)
         except Exception as e:
             print(index)
             print(self.y_train.iloc[index])
@@ -734,9 +742,7 @@ class GazeEstimation(Dataset):
         x_max += k * abs(x_max - x_min)
         y_max += k * abs(y_max - y_min)
 
-        img = Image.open(os.path.join(self.data_dir, path))
-        img = img.convert('RGB')
-        width, height = img.size
+        
 
         if self.imshow:
             img.save("origin_img.jpg")
@@ -752,52 +758,52 @@ class GazeEstimation(Dataset):
             y_max += k * abs(y_max - y_min)
 
         # Random Crop
-        if np.random.random_sample() <= 0.5:
+        #if np.random.random_sample() <= 0.5:
             # Calculate the minimum valid range of the crop that doesn't exclude the face and the gaze target
-            crop_x_min = np.min([gaze_x * width, x_min, x_max])
-            crop_y_min = np.min([gaze_y * height, y_min, y_max])
-            crop_x_max = np.max([gaze_x * width, x_min, x_max])
-            crop_y_max = np.max([gaze_y * height, y_min, y_max])
+            #crop_x_min = np.min([gaze_x * width, x_min, x_max])
+            #crop_y_min = np.min([gaze_y * height, y_min, y_max])
+            #crop_x_max = np.max([gaze_x * width, x_min, x_max])
+            #crop_y_max = np.max([gaze_y * height, y_min, y_max])
 
             # Randomly select a random top left corner
-            if crop_x_min >= 0:
-                crop_x_min = np.random.uniform(0, crop_x_min)
-            if crop_y_min >= 0:
-                crop_y_min = np.random.uniform(0, crop_y_min)
+            #if crop_x_min >= 0:
+            #    crop_x_min = np.random.uniform(0, crop_x_min)
+            #if crop_y_min >= 0:
+            #    crop_y_min = np.random.uniform(0, crop_y_min)
 
             # Find the range of valid crop width and height starting from the (crop_x_min, crop_y_min)
-            crop_width_min = crop_x_max - crop_x_min
-            crop_height_min = crop_y_max - crop_y_min
-            crop_width_max = width - crop_x_min
-            crop_height_max = height - crop_y_min
+            #crop_width_min = crop_x_max - crop_x_min
+            #crop_height_min = crop_y_max - crop_y_min
+            #crop_width_max = width - crop_x_min
+            #crop_height_max = height - crop_y_min
             # Randomly select a width and a height
-            crop_width = np.random.uniform(crop_width_min, crop_width_max)
-            crop_height = np.random.uniform(crop_height_min, crop_height_max)
+            #crop_width = np.random.uniform(crop_width_min, crop_width_max)
+            #crop_height = np.random.uniform(crop_height_min, crop_height_max)
 
             # Crop it
-            img = TF.crop(img, crop_y_min, crop_x_min, crop_height, crop_width)
+            #img = TF.crop(img, crop_y_min, crop_x_min, crop_height, crop_width)
 
             # Record the crop's (x, y) offset
-            offset_x, offset_y = crop_x_min, crop_y_min
+            #offset_x, offset_y = crop_x_min, crop_y_min
 
             # convert coordinates into the cropped frame
-            x_min, y_min, x_max, y_max = x_min - offset_x, y_min - offset_y, x_max - offset_x, y_max - offset_y
+            #x_min, y_min, x_max, y_max = x_min - offset_x, y_min - offset_y, x_max - offset_x, y_max - offset_y
             # if gaze_inside:
-            gaze_x, gaze_y = (gaze_x * width - offset_x) / float(crop_width), \
-                                 (gaze_y * height - offset_y) / float(crop_height)
+            #gaze_x, gaze_y = (gaze_x * width - offset_x) / float(crop_width), \
+            #                     (gaze_y * height - offset_y) / float(crop_height)
             # else:
             #     gaze_x = -1; gaze_y = -1
 
-            width, height = crop_width, crop_height
+            #width, height = crop_width, crop_height
 
         # Random flip
-        if np.random.random_sample() <= 0.5:
-            img = img.transpose(Image.FLIP_LEFT_RIGHT)
-            x_max_2 = width - x_min
-            x_min_2 = width - x_max
-            x_max = x_max_2
-            x_min = x_min_2
-            gaze_x = 1 - gaze_x
+        #if np.random.random_sample() <= 0.5:
+        #    img = img.transpose(Image.FLIP_LEFT_RIGHT)
+        #    x_max_2 = width - x_min
+        #    x_min_2 = width - x_max
+        #    x_max = x_max_2
+        #    x_min = x_min_2
+        #    gaze_x = 1 - gaze_x
 
         # Random color change
         if np.random.random_sample() <= 0.5:
